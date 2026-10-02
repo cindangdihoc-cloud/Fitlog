@@ -86,10 +86,12 @@ header{display:flex;justify-content:space-between;align-items:flex-start;gap:10p
 button,input,select,textarea{font-family:inherit}
 input,select{border-color:var(--bd)}.card{border-color:var(--bd)}
 #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 24px);transform:translateX(-50%);background:linear-gradient(135deg,#ff2d87,#9b4dff);color:#fff;padding:10px 18px;border-radius:99px;font-size:14px;z-index:200;box-shadow:0 0 20px rgba(255,45,135,.5);opacity:0;pointer-events:none;transition:opacity .25s}#toast.on{opacity:1}
+#gate{position:fixed;inset:0;z-index:150;display:grid;place-items:center;padding:20px;background:rgba(14,5,9,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}.gcard{width:100%;max-width:400px}
 </style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute"><defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9ccc"/><stop offset="1" stop-color="#ff2d87"/></linearGradient></defs></svg>
+<div id="gate" style="display:none"><div class="card gcard"><h3 id="gt">Tạo tài khoản FitLog</h3><p class="mu">Đặt tên hiển thị của bạn. Dữ liệu tập luyện được lưu riêng cho bạn và đồng bộ giữa điện thoại và máy tính khi bạn mở bằng cùng tài khoản Claude.</p><input id="gn" maxlength="30" placeholder="Tên của bạn..." autocomplete="off"><p style="display:flex;gap:8px;margin:12px 0 0"><button class="btn" id="gok">Bắt đầu</button><button class="btn s" id="gno" style="display:none">Hủy</button></p></div></div>
 <div id="cover"><div class="cv-in">
 <div class="cv-top"><span class="cv-logo">FitLog</span><span class="cv-pill">Tập luyện · Dinh dưỡng · Blog</span></div>
 <div class="cv-mid">
@@ -102,7 +104,7 @@ input,select{border-color:var(--bd)}.card{border-color:var(--bd)}
 </div></div>
 <header>
 <div><h1>Fit<span>Log</span></h1>
-<p class="sub">Theo dõi buổi tập, học bài tập đúng kỹ thuật, xem kênh YouTube uy tín và đọc kiến thức sức khỏe.</p></div><button class="btn s" id="back">← Trang bìa</button>
+<p class="sub">Theo dõi buổi tập, học bài tập đúng kỹ thuật, xem kênh YouTube uy tín và đọc kiến thức sức khỏe.</p></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn s" id="who">📱 Lưu trên thiết bị này</button><button class="btn s" id="back">← Trang bìa</button></div>
 </header>
 <nav id="nav">
 <button data-t="track" class="on">📊 Theo dõi</button>
@@ -374,6 +376,34 @@ clrB.onclick=()=>{
  clrB.dataset.c=1;clrB.textContent="Bấm lần nữa để xác nhận xóa";
  cT=setTimeout(()=>{delete clrB.dataset.c;clrB.textContent=clrL},4000);
 };
+
+var cdoc,cpro,clast="",cready=false,uname="";
+const bundle=()=>({logs,meals,tgt,pid,done});
+function setStatus(t){$("who").textContent=t||(cready?"☁️ "+(uname||"Chưa đặt tên"):"📱 Lưu trên thiết bị này");$("who").disabled=!cready}
+function applyB(b){logs=b.logs||[];meals=b.meals||[];tgt=b.tgt||2000;pid=b.pid||pid;done=b.done||{};
+ try{localStorage.setItem("fitlog",JSON.stringify(logs));localStorage.setItem("fitmeal",JSON.stringify(meals));localStorage.setItem("fittarget",tgt);localStorage.setItem("fitplan",pid);localStorage.setItem("fitdone",JSON.stringify(done))}catch(e){}
+ $("ntg").value=tgt;render();renderPlan();renderNut()}
+function showGate(rename){$("gt").textContent=rename?"Đổi tên hiển thị":"Tạo tài khoản FitLog";$("gn").value=uname;$("gno").style.display=rename?"":"none";$("gate").style.display="grid";setTimeout(()=>$("gn").focus(),50)}
+$("gno").onclick=()=>{$("gate").style.display="none"};
+$("who").onclick=()=>{if(cready)showGate(true)};
+$("gok").onclick=async()=>{const n=$("gn").value.trim();if(!n)return toast("Hãy nhập tên của bạn.");
+ try{await cpro.set({name:n});uname=n;$("gate").style.display="none";setStatus();toast("Xin chào, "+n+"!")}catch(e){toast("Không lưu được tên, thử lại nhé.")}};
+async function initCloud(){
+ try{
+  if(!window.claude)return;
+  const [db,user]=await Promise.all([claude.use("db"),claude.use("user")]);
+  if(!db||!user)return;
+  const id=await user.id();if(!id)return;
+  const col=db.collection("data/users/"+id);cdoc=col.doc("fitlog");cpro=col.doc("profile");
+  const [ps,ds]=await Promise.all([cpro.get(),cdoc.get()]);
+  if(ds.exists){clast=ds.data().json;applyB(JSON.parse(clast))}else{clast=JSON.stringify(bundle());await cdoc.set({json:clast})}
+  cready=true;uname=ps.exists?(ps.data().name||""):"";setStatus();
+  if(!uname)showGate(false);
+  cdoc.onSnapshot(sn=>{if(sn.exists&&!sn.metadata.hasPendingWrites){const j=sn.data().json;if(j&&j!==clast){clast=j;applyB(JSON.parse(j))}}});
+  setInterval(async()=>{const j=JSON.stringify(bundle());if(j===clast)return;clast=j;try{await cdoc.set({json:j})}catch(e){setStatus("⚠️ Chưa đồng bộ được")}},2000);
+ }catch(e){cready=false;setStatus()}
+}
+initCloud();
 </script>
 </body>
 </html>
